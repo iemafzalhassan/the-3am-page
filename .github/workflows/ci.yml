@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - run: pytest -q
+
+  prometheus-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: promtool check config
+        run: docker run --rm --entrypoint promtool -v "$PWD/prometheus:/etc/prometheus:ro" prom/prometheus:v3.15.0 check config /etc/prometheus/prometheus.yml
+      - name: promtool test rules
+        run: docker run --rm --entrypoint promtool -v "$PWD/prometheus:/etc/prometheus:ro" prom/prometheus:v3.15.0 test rules /etc/prometheus/rules_test.yml
+
+  # Bring the whole stack up the way attendees will, and poke it.
+  smoke:
+    runs-on: ubuntu-latest
+    needs: [app, prometheus-rules]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up -d --build
+      - name: prometheus scrapes checkout-api
+        run: |
+          for i in $(seq 1 30); do
+            curl -s localhost:9090/api/v1/targets | grep -q '"health":"up"' && exit 0
+            sleep 2
+          done
+          docker compose logs; exit 1
+      - name: grafana has the datasource
+        run: |
+          for i in $(seq 1 45); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' -u admin:admin localhost:3000/api/datasources/uid/prometheus)" = 200 ] && exit 0
+            sleep 2
+          done
+          docker compose logs grafana; exit 1
+      - name: chaos endpoint accepts the curl from the slides
+        run: |
+          curl -sf -X POST localhost:8080/chaos -d '{"latency_ms": 200}'
+          curl -sf -X POST localhost:8080/chaos -d ''
+      - if: always()
+        run: docker compose down -v

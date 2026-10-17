@@ -1,0 +1,8 @@
+apiVersion: 1
+policies:
+  - orgId: 1
+    receiver: alert-sink
+    group_by: ["alertname"]
+    group_wait: 10s        # workshop speed — default is 30s
+    group_interval: 30s
+    repeat_interval: 1h

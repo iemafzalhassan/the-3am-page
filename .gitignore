@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+.pytest_cache/
+offline/*.tar
+mcp/.token
+
+# files copied in by ./checkpoint.sh
+grafana/dashboards/checkout-red.json
+grafana/provisioning/dashboards/workshop.yml
+grafana/provisioning/alerting/*.yml

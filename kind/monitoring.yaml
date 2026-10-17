@@ -1,0 +1,101 @@
+# Prometheus discovers the app PODS through the Kubernetes API (not a static target):
+# every replica becomes its own target, labelled with its pod name.
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: prometheus }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: prometheus-discovery }
+rules:
+  - apiGroups: [""]
+    resources: [pods, services, endpoints]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: prometheus-discovery }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: prometheus-discovery }
+subjects: [{ kind: ServiceAccount, name: prometheus, namespace: default }]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: prometheus-config }
+data:
+  prometheus.yml: |
+    global: { scrape_interval: 5s, evaluation_interval: 5s }
+    scrape_configs:
+      - job_name: checkout-api
+        kubernetes_sd_configs: [{ role: pod, namespaces: { names: [default] } }]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: checkout-api
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_container_port_name]
+            regex: http
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: prometheus }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: prometheus } }
+  template:
+    metadata: { labels: { app: prometheus } }
+    spec:
+      serviceAccountName: prometheus
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.15.0
+          args: ["--config.file=/etc/prometheus/prometheus.yml"]
+          ports: [{ containerPort: 9090 }]
+          volumeMounts: [{ name: config, mountPath: /etc/prometheus }]
+          resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { memory: 384Mi } }
+      volumes: [{ name: config, configMap: { name: prometheus-config } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: prometheus }
+spec:
+  type: NodePort
+  selector: { app: prometheus }
+  ports: [{ port: 9090, targetPort: 9090, nodePort: 30090 }]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: grafana-datasources }
+data:
+  prometheus.yml: |
+    apiVersion: 1
+    datasources:
+      - { name: Prometheus, uid: prometheus, type: prometheus, access: proxy, url: "http://prometheus:9090", isDefault: true }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: grafana }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: grafana } }
+  template:
+    metadata: { labels: { app: grafana } }
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:13.2.4
+          env:
+            - { name: GF_SECURITY_ADMIN_PASSWORD, value: admin }
+          ports: [{ containerPort: 3000 }]
+          volumeMounts: [{ name: datasources, mountPath: /etc/grafana/provisioning/datasources }]
+          resources: { requests: { cpu: 50m, memory: 192Mi }, limits: { memory: 512Mi } }
+      volumes: [{ name: datasources, configMap: { name: grafana-datasources } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: grafana }
+spec:
+  type: NodePort
+  selector: { app: grafana }
+  ports: [{ port: 3000, targetPort: 3000, nodePort: 30030 }]

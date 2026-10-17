@@ -1,0 +1,28 @@
+# Unit tests for rules.yml — run with:
+#   docker run --rm --entrypoint promtool -v "$PWD/prometheus:/etc/prometheus:ro" \
+#     prom/prometheus:v3.15.0 test rules /etc/prometheus/rules_test.yml
+rule_files:
+  - rules.yml
+
+evaluation_interval: 5s
+
+tests:
+  # The app stops answering at t=10s. With `for: 30s` the alert must stay quiet
+  # (Pending) at t=20s and be Firing by t=50s.
+  - interval: 5s
+    input_series:
+      - series: 'up{job="checkout-api", instance="checkout-api:8080"}'
+        values: '1 1 0 0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 20s
+        alertname: TargetDown
+        exp_alerts: []
+      - eval_time: 50s
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels: { severity: page, job: checkout-api, instance: checkout-api:8080 }
+            exp_annotations: { summary: "checkout-api is not answering scrapes" }
+
+  # Your turn: add a test for HighErrorRate.
+  # Hint: two counters (all /checkout requests and the 5xx ones), e.g. values '0+10x30' and '0+1x30'
+  # give a 10% error ratio. With `for: 1m`, when should exp_alerts still be empty, and when firing?

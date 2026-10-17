@@ -1,0 +1,44 @@
+name: the-3am-page
+
+# Every port is bound to 127.0.0.1: on shared venue wifi, nobody else can open
+# your Grafana (admin/admin) or flip your /chaos switch.
+
+services:
+  checkout-api:
+    image: ghcr.io/iemafzalhassan/checkout-api:1.0
+    build: ./app
+    ports: ["127.0.0.1:8080:8080"]
+
+  loadgen:
+    image: ghcr.io/iemafzalhassan/checkout-api:1.0
+    build: ./app              # same image as checkout-api — built once, cached
+    command: ["python", "loadgen.py"]
+    depends_on: [checkout-api]
+
+  alert-sink:
+    image: ghcr.io/iemafzalhassan/checkout-api:1.0
+    build: ./app
+    command: ["uvicorn", "alertsink:app", "--host", "0.0.0.0", "--port", "5001", "--no-access-log"]
+    ports: ["127.0.0.1:5001:5001"]
+
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]   # changed a config file? docker compose restart prometheus
+    volumes: ["./prometheus:/etc/prometheus:ro"]
+    ports: ["127.0.0.1:9090:9090"]
+
+  grafana:
+    image: grafana/grafana:13.2.4
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on: [prometheus]

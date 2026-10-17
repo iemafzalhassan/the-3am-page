@@ -1,0 +1,37 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: checkout
+    folder: The 3 AM Page
+    interval: 10s
+    rules:
+      - uid: checkout-p99-high
+        title: CheckoutP99High
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{route="/checkout"}[1m])))
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [1] }
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: page
+        annotations:
+          summary: Checkout p99 is above 1s
+          runbook_url: https://wiki/runbooks/checkout-latency

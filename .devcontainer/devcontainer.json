@@ -1,0 +1,17 @@
+{
+  "name": "The 3 AM Page",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "hostRequirements": { "cpus": 2, "memory": "4gb" },
+  "forwardPorts": [8080, 9090, 3000, 5001],
+  "portsAttributes": {
+    "8080": { "label": "checkout-api" },
+    "9090": { "label": "Prometheus" },
+    "3000": { "label": "Grafana (admin/admin)" },
+    "5001": { "label": "alert-sink" }
+  },
+  "postCreateCommand": "docker compose pull --ignore-buildable && docker compose build",
+  "postStartCommand": "docker compose up -d"
+}
